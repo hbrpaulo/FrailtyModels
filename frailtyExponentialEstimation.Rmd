@@ -1,0 +1,131 @@
+---
+title: "Gamma Frailty Model with Exponential Baseline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(survival)
+library(tidyverse)
+library(kableExtra)
+```
+
+## 1. Simulation
+
+```{r}
+set.seed(2025)
+
+n <- 5000
+rate_base <- rexp(1, 1)
+frailty_variance <- rgamma(1, shape = 2, rate = 2)
+beta_rate <- rnorm(2)
+
+# Covariates
+cov_df <- tibble(
+  X1 = rbinom(n, 1, 0.5),
+  X2 = rnorm(n)
+)
+
+alpha_gamma_sim <- 1 / frailty_variance
+Z <- rgamma(n, shape = alpha_gamma_sim, rate = alpha_gamma_sim)
+
+X <- as.matrix(cov_df)
+rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+
+U <- runif(n)
+times <- -log(U) / (Z * rate_ind)
+
+cens_times <- rexp(n, rate = 0.05)
+observed_times <- pmin(times, cens_times)
+event <- as.numeric(times <= cens_times)
+```
+
+## 2. Log-Likelihood
+
+```{r}
+exp_frailty_cov_loglik <- function(params, times, event, X) {
+  rate_base <- params[1]; frailty_var <- params[2]
+  p <- ncol(X)
+  beta_rate <- params[3:(2 + p)]
+
+  if (any(c(rate_base, frailty_var) <= 0)) return(Inf)
+
+  alpha_gamma <- 1 / frailty_var
+  rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+  H0 <- rate_ind * times
+  h0 <- rate_ind
+  S <- (1 + H0 / alpha_gamma)^(-alpha_gamma)
+  h <- h0 / (1 + H0 / alpha_gamma)
+
+  if (any(S <= 0) || any(event == 1 & h <= 0)) return(Inf)
+  -sum(event * (log(h) + log(S)) + (1 - event) * log(S))
+}
+```
+
+## 3. MLE Estimation
+
+```{r}
+alpha <- 0.05
+p <- ncol(X)
+init_params <- c(0.1, 0.3, rep(0, p))
+
+opt <- optim(init_params, exp_frailty_cov_loglik,
+             times = observed_times, event = event, X = X,
+             method = "L-BFGS-B",
+             lower = c(0.001, 0.01, rep(-Inf, p)),
+             hessian = TRUE)
+
+est <- opt$par
+vcov_mat <- solve(opt$hessian)
+se <- sqrt(diag(vcov_mat))
+z_val <- qnorm(1 - alpha / 2)
+
+param_names <- c("Rate Base", "Frailty Variance", paste0("Beta_Rate", 1:p))
+true_values <- c(rate_base, frailty_variance, beta_rate)
+
+ci <- data.frame(
+  Parameter = param_names,
+  Lower = est - z_val * se,
+  `True Values` = true_values,
+  Upper = est + z_val * se,
+  CI = ifelse(true_values >= (est - z_val * se) &
+                true_values <= (est + z_val * se), "Yes", "No"),
+  Estimate = est,
+  SE = se
+)
+
+kbl(ci, align = 'lccccc', digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE,
+                            bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## 4. Empirical Bayes Frailty
+
+```{r}
+EB_frailty_exp <- function(params, times, event, X) {
+  rate_base <- params[1]; frailty_var <- params[2]
+  p <- ncol(X)
+  beta_rate <- params[3:(2 + p)]
+
+  alpha <- 1 / frailty_var
+  rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+  H0 <- rate_ind * times
+  (alpha + event) / (alpha + H0)
+}
+
+frailty_est <- EB_frailty_exp(est, observed_times, event, X)
+
+ggplot(data.frame(frailty = frailty_est), aes(x = frailty)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 25,
+                 fill = "skyblue", color = "darkblue", alpha = 0.6) +
+  geom_density(linetype = "dashed", color = "darkgreen", linewidth = 1.2) +
+  labs(title = "Empirical Bayes Frailty Estimates - Exponential Baseline",
+       x = "Frailty (Z)", y = "Density") +
+  theme_minimal()
+```
