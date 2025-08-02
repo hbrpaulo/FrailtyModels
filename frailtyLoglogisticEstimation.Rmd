@@ -1,0 +1,139 @@
+---
+title: "Gamma Frailty Model with Loglogistic Baseline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(survival)
+library(tidyverse)
+library(kableExtra)
+```
+
+## 1. Simulation
+
+```{r}
+set.seed(2025)
+
+n <- 5000
+shape_base <- rexp(1, 1)
+scale_base <- rexp(1, 1)
+frailty_variance <- rgamma(1, shape = 2, rate = 2)
+beta_shape <- rnorm(2)
+beta_scale <- rnorm(2)
+
+cov_df <- tibble(
+  X1 = rbinom(n, 1, 0.5),
+  X2 = rnorm(n)
+)
+
+alpha_gamma_sim <- 1 / frailty_variance
+Z <- rgamma(n, shape = alpha_gamma_sim, rate = alpha_gamma_sim)
+
+X <- as.matrix(cov_df)
+shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+scale_ind <- exp(log(scale_base) + X %*% beta_scale)
+
+U <- runif(n)
+times <- scale_ind * (U^(-1 / Z) - 1)^(1 / shape_ind)
+
+cens_times <- rexp(n, rate = 0.05)
+observed_times <- pmin(times, cens_times)
+event <- as.numeric(times <= cens_times)
+```
+
+## 2. Log-Likelihood
+
+```{r}
+loglogistic_frailty_cov_loglik <- function(params, times, event, X) {
+  shape_base <- params[1]; scale_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_shape <- params[4:(3 + p)]
+  beta_scale <- params[(4 + p):(3 + 2 * p)]
+
+  if (any(c(shape_base, scale_base, frailty_var) <= 0)) return(Inf)
+
+  alpha_gamma <- 1 / frailty_var
+  shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+  scale_ind <- exp(log(scale_base) + X %*% beta_scale)
+  H0 <- -log(1 / (1 + (times / scale_ind)^shape_ind))
+  h0 <- ((shape_ind / scale_ind) * (times / scale_ind)^(shape_ind - 1)) /
+    (1 + (times / scale_ind)^shape_ind)
+  S <- (1 + H0 / alpha_gamma)^(-alpha_gamma)
+  h <- h0 / (1 + H0 / alpha_gamma)
+
+  if (any(S <= 0) || any(event == 1 & h <= 0)) return(Inf)
+  -sum(event * (log(h) + log(S)) + (1 - event) * log(S))
+}
+```
+
+## 3. MLE Estimation
+
+```{r}
+alpha <- 0.05
+p <- ncol(X)
+init_params <- c(0.1, 0.1, 0.3, rep(0, 2 * p))
+
+opt <- optim(init_params, loglogistic_frailty_cov_loglik,
+             times = observed_times, event = event, X = X,
+             method = "L-BFGS-B",
+             lower = c(0.001, 0.001, 0.01, rep(-Inf, 2 * p)),
+             hessian = TRUE)
+
+est <- opt$par
+vcov_mat <- solve(opt$hessian)
+se <- sqrt(diag(vcov_mat))
+z_val <- qnorm(1 - alpha / 2)
+
+param_names <- c("Shape Base", "Scale Base", "Frailty Variance",
+                 paste0("Beta_Shape", 1:p), paste0("Beta_Scale", 1:p))
+true_values <- c(shape_base, scale_base, frailty_variance, beta_shape, beta_scale)
+
+ci <- data.frame(
+  Parameter = param_names,
+  Lower = est - z_val * se,
+  `True Values` = true_values,
+  Upper = est + z_val * se,
+  CI = ifelse(true_values >= (est - z_val * se) &
+                true_values <= (est + z_val * se), "Yes", "No"),
+  Estimate = est,
+  SE = se
+)
+
+kbl(ci, align = 'lccccc', digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE,
+                            bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## 4. Empirical Bayes Frailty
+
+```{r}
+EB_frailty_loglogistic <- function(params, times, event, X) {
+  shape_base <- params[1]; scale_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_shape <- params[4:(3 + p)]
+  beta_scale <- params[(4 + p):(3 + 2 * p)]
+
+  alpha <- 1 / frailty_var
+  shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+  scale_ind <- exp(log(scale_base) + X %*% beta_scale)
+  H0 <- -log(1 / (1 + (times / scale_ind)^shape_ind))
+  (alpha + event) / (alpha + H0)
+}
+
+frailty_est <- EB_frailty_loglogistic(est, observed_times, event, X)
+
+ggplot(data.frame(frailty = frailty_est), aes(x = frailty)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 25,
+                 fill = "skyblue", color = "darkblue", alpha = 0.6) +
+  geom_density(linetype = "dashed", color = "darkgreen", linewidth = 1.2) +
+  labs(title = "Empirical Bayes Frailty Estimates - Loglogistic Baseline",
+       x = "Frailty (Z)", y = "Density") +
+  theme_minimal()
+```

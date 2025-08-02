@@ -1,0 +1,151 @@
+---
+title: "Gamma Frailty Model with Piecewise Exponential Baseline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(survival)
+library(tidyverse)
+library(kableExtra)
+```
+
+## 1. Simulation
+
+```{r}
+set.seed(2025)
+
+n <- 5000
+breaks <- c(0, 2, 5, 10)
+rates_base <- rexp(length(breaks) - 1, 1)
+frailty_variance <- rgamma(1, shape = 2, rate = 2)
+beta_rate <- matrix(rnorm(2 * (length(breaks) - 1)), ncol = 2)
+
+cov_df <- tibble(
+  X1 = rbinom(n, 1, 0.5),
+  X2 = rnorm(n)
+)
+
+alpha_gamma_sim <- 1 / frailty_variance
+Z <- rgamma(n, shape = alpha_gamma_sim, rate = alpha_gamma_sim)
+
+X <- as.matrix(cov_df)
+rates_ind <- sapply(1:(length(breaks) - 1), function(i) {
+  exp(log(rates_base[i]) + X %*% beta_rate[i, ])
+})
+
+simulate_piecewise <- function(n, Z, breaks, rates) {
+  times <- numeric(n)
+  for (j in 1:n) {
+    t <- 0
+    z <- Z[j]
+    for (i in seq_along(rates)) {
+      u <- runif(1)
+      wait <- -log(u) / (z * rates[[i]][j])
+      if (t + wait <= breaks[i + 1]) {
+        t <- t + wait
+        break
+      } else {
+        t <- breaks[i + 1]
+      }
+    }
+    times[j] <- t
+  }
+  times
+}
+
+times <- simulate_piecewise(n, as.vector(Z), breaks, as.data.frame(rates_ind))
+
+cens_times <- rexp(n, rate = 0.05)
+observed_times <- pmin(times, cens_times)
+event <- as.numeric(times <= cens_times)
+```
+
+## 2. Log-Likelihood
+
+```{r}
+pwexp_frailty_cov_loglik <- function(params, times, event, X, breaks) {
+  rates_base <- params[1:(length(breaks) - 1)]
+  frailty_var <- params[length(breaks)]
+  p <- ncol(X)
+  beta_rate <- matrix(params[(length(breaks) + 1):length(params)], ncol = p, byrow = TRUE)
+
+  if (any(c(rates_base, frailty_var) <= 0)) return(Inf)
+
+  alpha_gamma <- 1 / frailty_var
+  rates_ind <- sapply(1:(length(breaks) - 1), function(i) {
+    exp(log(rates_base[i]) + X %*% beta_rate[i, ])
+  })
+  H0 <- baseline_functions$piecewise_exp$H0(times, breaks, rates_ind)
+  h0 <- baseline_functions$piecewise_exp$h0(times, breaks, rates_ind)
+  S <- (1 + H0 / alpha_gamma)^(-alpha_gamma)
+  h <- h0 / (1 + H0 / alpha_gamma)
+
+  if (any(S <= 0) || any(event == 1 & h <= 0)) return(Inf)
+  -sum(event * (log(h) + log(S)) + (1 - event) * log(S))
+}
+```
+
+## 3. MLE Estimation
+
+```{r}
+alpha <- 0.05
+p <- ncol(X)
+init_params <- c(rep(0.1, length(breaks) - 1), 0.3, rep(0, p * (length(breaks) - 1)))
+
+baseline_functions <- list(
+  piecewise_exp = list(
+    H0 = function(t, breaks, rates) {
+      sapply(t, function(x){
+        idx <- findInterval(x, breaks, rightmost.closed = TRUE)
+        cumhaz <- sum(diff(c(0, breaks[1:idx])) * rates[1:idx])
+        if (idx < length(rates)) cumhaz <- cumhaz + (x - breaks[idx]) * rates[idx + 1]
+        cumhaz
+      })
+    },
+    h0 = function(t, breaks, rates) {
+      sapply(t, function(x){ rates[findInterval(x, breaks, rightmost.closed = TRUE) + 1] })
+    }
+  )
+)
+
+opt <- optim(init_params, pwexp_frailty_cov_loglik,
+             times = observed_times, event = event, X = X, breaks = breaks,
+             method = "L-BFGS-B",
+             lower = c(rep(0.001, length(breaks) - 1), 0.01, rep(-Inf, p * (length(breaks) - 1))),
+             hessian = TRUE)
+
+est <- opt$par
+vcov_mat <- solve(opt$hessian)
+se <- sqrt(diag(vcov_mat))
+z_val <- qnorm(1 - alpha / 2)
+
+param_names <- c(paste0("Rate", 1:(length(breaks) - 1)), "Frailty Variance",
+                 outer(paste0("Beta_Rate", 1:(length(breaks) - 1)), 1:p, paste, sep = "_") |> as.vector())
+true_values <- c(rates_base, frailty_variance, as.vector(beta_rate))
+
+ci <- data.frame(
+  Parameter = param_names,
+  Lower = est - z_val * se,
+  `True Values` = true_values,
+  Upper = est + z_val * se,
+  Estimate = est,
+  SE = se
+)
+
+kbl(ci, align = 'lcccc', digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE,
+                            bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## 4. Empirical Bayes Frailty
+
+```{r}
+# For brevity we omit EB calculation here
+```

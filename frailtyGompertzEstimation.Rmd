@@ -1,0 +1,138 @@
+---
+title: "Gamma Frailty Model with Gompertz Baseline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(survival)
+library(tidyverse)
+library(kableExtra)
+```
+
+## 1. Simulation
+
+```{r}
+set.seed(2025)
+
+n <- 5000
+a_base <- rexp(1, 1)
+b_base <- rexp(1, 1)
+frailty_variance <- rgamma(1, shape = 2, rate = 2)
+beta_a <- rnorm(2)
+beta_b <- rnorm(2)
+
+cov_df <- tibble(
+  X1 = rbinom(n, 1, 0.5),
+  X2 = rnorm(n)
+)
+
+alpha_gamma_sim <- 1 / frailty_variance
+Z <- rgamma(n, shape = alpha_gamma_sim, rate = alpha_gamma_sim)
+
+X <- as.matrix(cov_df)
+a_ind <- exp(log(a_base) + X %*% beta_a)
+b_ind <- exp(log(b_base) + X %*% beta_b)
+
+U <- runif(n)
+times <- (1 / b_ind) * log(1 - (b_ind / (a_ind * Z)) * log(U))
+
+cens_times <- rexp(n, rate = 0.05)
+observed_times <- pmin(times, cens_times)
+event <- as.numeric(times <= cens_times)
+```
+
+## 2. Log-Likelihood
+
+```{r}
+gompertz_frailty_cov_loglik <- function(params, times, event, X) {
+  a_base <- params[1]; b_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_a <- params[4:(3 + p)]
+  beta_b <- params[(4 + p):(3 + 2 * p)]
+
+  if (any(c(a_base, b_base, frailty_var) <= 0)) return(Inf)
+
+  alpha_gamma <- 1 / frailty_var
+  a_ind <- exp(log(a_base) + X %*% beta_a)
+  b_ind <- exp(log(b_base) + X %*% beta_b)
+  H0 <- (a_ind / b_ind) * (exp(b_ind * times) - 1)
+  h0 <- a_ind * exp(b_ind * times)
+  S <- (1 + H0 / alpha_gamma)^(-alpha_gamma)
+  h <- h0 / (1 + H0 / alpha_gamma)
+
+  if (any(S <= 0) || any(event == 1 & h <= 0)) return(Inf)
+  -sum(event * (log(h) + log(S)) + (1 - event) * log(S))
+}
+```
+
+## 3. MLE Estimation
+
+```{r}
+alpha <- 0.05
+p <- ncol(X)
+init_params <- c(0.1, 0.1, 0.3, rep(0, 2 * p))
+
+opt <- optim(init_params, gompertz_frailty_cov_loglik,
+             times = observed_times, event = event, X = X,
+             method = "L-BFGS-B",
+             lower = c(0.001, 0.001, 0.01, rep(-Inf, 2 * p)),
+             hessian = TRUE)
+
+est <- opt$par
+vcov_mat <- solve(opt$hessian)
+se <- sqrt(diag(vcov_mat))
+z_val <- qnorm(1 - alpha / 2)
+
+param_names <- c("a Base", "b Base", "Frailty Variance",
+                 paste0("Beta_a", 1:p), paste0("Beta_b", 1:p))
+true_values <- c(a_base, b_base, frailty_variance, beta_a, beta_b)
+
+ci <- data.frame(
+  Parameter = param_names,
+  Lower = est - z_val * se,
+  `True Values` = true_values,
+  Upper = est + z_val * se,
+  CI = ifelse(true_values >= (est - z_val * se) &
+                true_values <= (est + z_val * se), "Yes", "No"),
+  Estimate = est,
+  SE = se
+)
+
+kbl(ci, align = 'lccccc', digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE,
+                            bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## 4. Empirical Bayes Frailty
+
+```{r}
+EB_frailty_gompertz <- function(params, times, event, X) {
+  a_base <- params[1]; b_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_a <- params[4:(3 + p)]
+  beta_b <- params[(4 + p):(3 + 2 * p)]
+
+  alpha <- 1 / frailty_var
+  a_ind <- exp(log(a_base) + X %*% beta_a)
+  b_ind <- exp(log(b_base) + X %*% beta_b)
+  H0 <- (a_ind / b_ind) * (exp(b_ind * times) - 1)
+  (alpha + event) / (alpha + H0)
+}
+
+frailty_est <- EB_frailty_gompertz(est, observed_times, event, X)
+
+ggplot(data.frame(frailty = frailty_est), aes(x = frailty)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 25,
+                 fill = "skyblue", color = "darkblue", alpha = 0.6) +
+  geom_density(linetype = "dashed", color = "darkgreen", linewidth = 1.2) +
+  labs(title = "Empirical Bayes Frailty Estimates - Gompertz Baseline",
+       x = "Frailty (Z)", y = "Density") +
+  theme_minimal()
+```
