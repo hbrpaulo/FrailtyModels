@@ -1,0 +1,253 @@
+---
+title: "Gamma Frailty Model with Gamma Baseline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(survival)
+library(tidyverse)
+library(kableExtra)
+```
+
+## 1. Simulation
+
+```{r}
+set.seed(2025)
+
+n <- 5000
+shape_base <- rgamma(1, 2, 1)
+rate_base <- rgamma(1, 2, 1)
+frailty_variance <- rgamma(1, shape = 2, rate = 2)
+beta_shape <- rnorm(2)
+beta_rate <- rnorm(2)
+
+cov_df <- tibble(
+  X1 = rbinom(n, 1, 0.5),
+  X2 = rnorm(n)
+)
+
+alpha_gamma_sim <- 1 / frailty_variance
+Z <- rgamma(n, shape = alpha_gamma_sim, rate = alpha_gamma_sim)
+
+X <- as.matrix(cov_df)
+shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+
+U <- runif(n)
+times <- qgamma(1 - (1 - U)^(1 / Z), shape = shape_ind, rate = rate_ind)
+
+cens_times <- rexp(n, rate = 0.05)
+observed_times <- pmin(times, cens_times)
+event <- as.numeric(times <= cens_times)
+```
+
+## 2. Log-Likelihood
+
+```{r}
+gamma_frailty_cov_loglik <- function(params, times, event, X) {
+  shape_base <- params[1]; rate_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_shape <- params[4:(3 + p)]
+  beta_rate <- params[(4 + p):(3 + 2 * p)]
+
+  if (any(c(shape_base, rate_base, frailty_var) <= 0)) return(Inf)
+
+  alpha_gamma <- 1 / frailty_var
+  shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+  rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+  H0 <- -log(1 - pgamma(times, shape = shape_ind, rate = rate_ind))
+  h0 <- dgamma(times, shape = shape_ind, rate = rate_ind) /
+    (1 - pgamma(times, shape = shape_ind, rate = rate_ind))
+  S <- (1 + H0 / alpha_gamma)^(-alpha_gamma)
+  h <- h0 / (1 + H0 / alpha_gamma)
+
+  if (any(S <= 0) || any(event == 1 & h <= 0)) return(Inf)
+  -sum(event * (log(h) + log(S)) + (1 - event) * log(S))
+}
+```
+
+## 3. MLE Estimation
+
+```{r}
+alpha <- 0.05
+p <- ncol(X)
+init_params <- c(1, 1, 0.3, rep(0, 2 * p))
+
+opt <- optim(init_params, gamma_frailty_cov_loglik,
+             times = observed_times, event = event, X = X,
+             method = "L-BFGS-B",
+             lower = c(0.001, 0.001, 0.01, rep(-Inf, 2 * p)),
+             hessian = TRUE)
+
+est <- opt$par
+vcov_mat <- solve(opt$hessian)
+se <- sqrt(diag(vcov_mat))
+z_val <- qnorm(1 - alpha / 2)
+
+param_names <- c("Shape Base", "Rate Base", "Frailty Variance",
+                 paste0("Beta_Shape", 1:p), paste0("Beta_Rate", 1:p))
+true_values <- c(shape_base, rate_base, frailty_variance, beta_shape, beta_rate)
+
+ci <- data.frame(
+  Parameter = param_names,
+  Lower = est - z_val * se,
+  `True Values` = true_values,
+  Upper = est + z_val * se,
+  CI = ifelse(true_values >= (est - z_val * se) &
+                true_values <= (est + z_val * se), "Yes", "No"),
+  Estimate = est,
+  SE = se
+)
+
+kbl(ci, align = 'lccccc', digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE,
+                            bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## 4. Empirical Bayes Frailty
+
+```{r}
+EB_frailty_gamma <- function(params, times, event, X) {
+  shape_base <- params[1]; rate_base <- params[2]; frailty_var <- params[3]
+  p <- ncol(X)
+  beta_shape <- params[4:(3 + p)]
+  beta_rate <- params[(4 + p):(3 + 2 * p)]
+
+  alpha <- 1 / frailty_var
+  shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+  rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+  H0 <- -log(1 - pgamma(times, shape = shape_ind, rate = rate_ind))
+  (alpha + event) / (alpha + H0)
+}
+
+frailty_est <- EB_frailty_gamma(est, observed_times, event, X)
+
+ggplot(data.frame(frailty = frailty_est), aes(x = frailty)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 25,
+                 fill = "skyblue", color = "darkblue", alpha = 0.6) +
+  geom_density(linetype = "dashed", color = "darkgreen", linewidth = 1.2) +
+  labs(title = "Empirical Bayes Frailty Estimates - Gamma Baseline",
+       x = "Frailty (Z)", y = "Density") +
+  theme_minimal()
+```
+
+## 5. Coverage Probability Study
+
+```{r coverage, eval = TRUE, cache = TRUE}
+coverage_study <- function(n_sim = 500, n = 5000, alpha = 0.05) {
+  cover_results <- matrix(NA, nrow = n_sim, ncol = length(true_values))
+  colnames(cover_results) <- param_names
+  ci_records <- list()
+
+  for (sim in 1:n_sim) {
+    if (interactive()) cat("Running simulation", sim, "of", n_sim, "\n")
+
+    Z <- rgamma(n, shape = 1 / frailty_variance, rate = 1 / frailty_variance)
+    X <- as.matrix(cov_df)
+    shape_ind <- exp(log(shape_base) + X %*% beta_shape)
+    rate_ind <- exp(log(rate_base) + X %*% beta_rate)
+    U <- runif(n)
+    times <- qgamma(1 - (1 - U)^(1 / Z), shape = shape_ind, rate = rate_ind)
+    cens_times <- rexp(n, rate = 0.05)
+    obs_times <- pmin(times, cens_times)
+    event <- as.numeric(times <= cens_times)
+
+    init_params <- c(1, 1, 0.3, rep(0, 2 * ncol(X)))
+    opt <- tryCatch(
+      optim(init_params, gamma_frailty_cov_loglik,
+            times = obs_times, event = event, X = X,
+            method = "L-BFGS-B",
+            lower = c(0.001, 0.001, 0.01, rep(-Inf, 2 * ncol(X))),
+            hessian = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(opt) || !is.finite(opt$value)) next
+
+    est <- opt$par
+    vcov_mat <- tryCatch(solve(opt$hessian), error = function(e) NULL)
+    if (is.null(vcov_mat)) next
+
+    se <- sqrt(diag(vcov_mat))
+    z_val <- qnorm(1 - alpha / 2)
+    lower <- est - z_val * se
+    upper <- est + z_val * se
+
+    cover_results[sim, ] <- (true_values >= lower) & (true_values <= upper)
+
+    ci_df <- data.frame(Parameter = param_names,
+                        Lower = lower, Estimate = est, Upper = upper,
+                        True = true_values, Sim = sim)
+    ci_records[[sim]] <- ci_df
+  }
+
+  cover_results <- cover_results[complete.cases(cover_results), ]
+  coverage <- colMeans(cover_results)
+  ci_all <- do.call(rbind, ci_records)
+  list(coverage = coverage, ci_data = ci_all)
+}
+
+set.seed(123)
+coverage <- coverage_study(n_sim = 5)
+```
+
+```{r}
+print(coverage)
+coverage_df <- data.frame(Parameter = names(coverage$coverage),
+                          Coverage = round(coverage$coverage, 3))
+ggplot(coverage_df, aes(x = Parameter, y = Coverage)) +
+  geom_col(fill = "steelblue") +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "red") +
+  ylim(0, 1) +
+  labs(title = "Coverage Probability by Parameter",
+       y = "Coverage", x = "Parameter") +
+  theme_minimal()
+```
+
+```{r coverage_multiN, eval = TRUE, cache = TRUE}
+coverage_study_multiN <- function(N_values = c(200, 500, 1000, 2000),
+                                  n_sim = 200, alpha = 0.05) {
+  results_list <- list()
+  ci_funnel_list <- list()
+
+  for (N in N_values) {
+    if (interactive()) cat("Running simulations for N =", N, "\n")
+    cov_res <- coverage_study(n_sim = n_sim, n = N, alpha = alpha)
+    coverage <- cov_res$coverage
+    ci_data <- cov_res$ci_data
+    ci_data$N <- N
+
+    df_cov <- data.frame(Parameter = names(coverage),
+                         Coverage = as.numeric(coverage), N = N)
+    results_list[[as.character(N)]] <- df_cov
+    ci_funnel_list[[as.character(N)]] <- ci_data
+  }
+
+  results_df <- do.call(rbind, results_list)
+  ci_funnel_df <- do.call(rbind, ci_funnel_list)
+  list(coverage_df = results_df, ci_funnel_df = ci_funnel_df)
+}
+
+set.seed(123)
+N_values <- c(50, 100, 200, 500, 1000)
+coverage_multiN <- coverage_study_multiN(N_values = N_values,
+                                         n_sim = 10, alpha = 0.05)
+```
+
+```{r}
+ggplot(coverage_multiN$coverage_df,
+       aes(x = N, y = Coverage, color = Parameter, group = Parameter)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "red") +
+  ylim(0, 1) +
+  labs(title = "Coverage Probability Across Sample Sizes",
+       x = "Sample Size (N)", y = "Coverage") +
+  theme_minimal()
+```
