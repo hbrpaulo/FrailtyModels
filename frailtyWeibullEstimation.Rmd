@@ -348,6 +348,3 @@ qqplot_theoretical(frailty_est, shape=1/frailty_variance, rate=1/frailty_varianc
 ```{r}
 beepr::beep(2)
 ```
-
-- estimar fragilidade
-- curva sobreposta
