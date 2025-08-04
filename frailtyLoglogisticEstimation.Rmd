@@ -199,6 +199,9 @@ coverage <- coverage_study(n_sim = 5)
 
 ```{r}
 print(coverage)
+```
+
+```{r}
 coverage_df <- data.frame(Parameter = names(coverage$coverage),
                           Coverage = round(coverage$coverage, 3))
 ggplot(coverage_df, aes(x = Parameter, y = Coverage)) +
@@ -233,7 +236,9 @@ coverage_study_multiN <- function(N_values = c(200, 500, 1000, 2000),
   ci_funnel_df <- do.call(rbind, ci_funnel_list)
   list(coverage_df = results_df, ci_funnel_df = ci_funnel_df)
 }
+```
 
+```{r coverage_multiN, eval = TRUE, cache = TRUE}
 set.seed(123)
 N_values <- c(50, 100, 200, 500, 1000)
 coverage_multiN <- coverage_study_multiN(N_values = N_values,
