@@ -297,7 +297,7 @@ results_multi <- coverage_study_multiN(N_values=N_values, n_sim=10, alpha=0.05)
 
 
 ```{r, eval = TRUE}
-save(results_multi, file="output/results_multi.RData")
+# save(results_multi, file="output/results_multi.RData")
 ```
 
 
