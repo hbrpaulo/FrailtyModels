@@ -264,4 +264,24 @@ ggplot(coverage_multiN$coverage_df,
   labs(title = "Coverage Probability Across Sample Sizes",
        x = "Sample Size (N)", y = "Coverage") +
   theme_minimal()
+
+ci_funnel_df <- coverage_multiN$ci_funnel_df %>%
+  arrange(N) %>%
+  group_by(Parameter, N) %>%
+  summarise(Lower = mean(Lower), Estimate = mean(Estimate),
+            Upper = mean(Upper), True = mean(True), .groups = "drop")
+
+ggplot(ci_funnel_df, aes(x = N)) +
+  geom_point(aes(y = Estimate), color = "blue", alpha = 0.3, size = 0.5) +
+  geom_errorbar(aes(ymin = Lower, ymax = Upper), alpha = 0.1) +
+  geom_hline(aes(yintercept = True), linetype = "dashed", color = "red") +
+  facet_wrap(~ Parameter, scales = "free_y") +
+  labs(title = "Funnel Plot of Confidence Intervals vs Sample Size",
+       y = "Parameter Estimate / CI", x = "Sample Size (N)") +
+  scale_x_log10() +
+  theme_void()
+```
+
+```{r}
+beepr::beep(2)
 ```
