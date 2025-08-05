@@ -22,8 +22,15 @@
 #'
 #' @examples
 #' params <- list(baseline = 0.1, beta = 0.5, frailty_var = 0.2)
-#' frailty_simulation_pipeline("exponential", sims = 10, n = c(200, 400),
+#' X <- matrix(rnorm(20), ncol = 1)
+#' sim <- simulate_frailty_data("exponential", n = 20, params = params, X = X)
+#' fit <- estimate_frailty_mle(list(baseline = 0.1, beta = 0,
+#'                                  frailty_var = 0.2),
+#'                             sim$time, sim$event, X, "exponential")
+#' \dontrun{
+#' frailty_simulation_pipeline("exponential", sims = 2, n = c(20, 40),
 #'                             true_params = params, plot = FALSE)
+#' }
 #' @export
 frailty_simulation_pipeline <- function(baseline, sims, n, true_params, plot = TRUE) {
   `%||%` <- function(a, b) if (!is.null(a)) a else b
