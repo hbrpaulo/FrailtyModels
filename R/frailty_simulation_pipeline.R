@@ -6,7 +6,7 @@
 #'
 #' @param baseline Either a character string identifying the baseline
 #'   distribution ("exponential", "weibull" or "lognormal") or a list with
-#'   elements `h0`, `H0` and `H0_inv`.
+#'   elements `h0`, `H0` and optionally `H0_inv`.
 #' @param sims Number of simulation replicates.
 #' @param n Integer vector of sample sizes.
 #' @param true_params List with components `baseline` (numeric vector of true
@@ -54,12 +54,27 @@ frailty_simulation_pipeline <- function(baseline, sims, n, true_params, plot = T
         stop("Unsupported baseline distribution")
       )
     } else if (is.list(baseline)) {
-      required <- c("h0", "H0", "H0_inv")
+      if (length(baseline) == 1 && is.character(baseline[[1]])) {
+        return(resolve_baseline(baseline[[1]]))
+      }
+      required <- c("h0", "H0")
       if (!all(required %in% names(baseline))) {
-        stop("Custom baseline must provide h0, H0 and H0_inv")
+        stop("Custom baseline must provide h0 and H0")
+      }
+      if (!is.function(baseline$h0) || !is.function(baseline$H0)) {
+        stop("h0 and H0 must be functions")
       }
       baseline$param_names <- baseline$param_names %||% character(0)
       baseline$positive <- baseline$positive %||% rep(TRUE, length(baseline$param_names))
+      if (is.null(baseline$H0_inv)) {
+        H0_fun <- baseline$H0
+        baseline$H0_inv <- function(y, p) {
+          sapply(y, function(yy) {
+            uniroot(function(t) H0_fun(t, p) - yy,
+                    lower = 1e-10, upper = 1e6)$root
+          })
+        }
+      }
       baseline
     } else {
       stop("baseline must be a character string or list")
