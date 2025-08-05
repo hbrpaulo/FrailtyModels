@@ -268,6 +268,22 @@ ggplot(ci_funnel_df, aes(x = N)) +
   theme_void()
 ```
 
+```{r, eval = FALSE, echo = FALSE}
+qqplot_theoretical <- function(est_frailty, shape, rate){
+  n <- length(est_frailty)
+  gamma_quantiles <- qexp(ppoints(n),rate = rate)
+  qq_df <- data.frame(Theoretical=gamma_quantiles, Estimated=sort(est_frailty))
+  ggplot(qq_df, aes(x=Theoretical, y=Estimated))+
+    geom_point(color="purple", alpha=0.6)+
+    geom_abline(intercept=0, slope=1, color="black", linetype="dashed")+
+    labs(title="QQ-Plot: Estimated Frailty vs Gamma(Shape=1/θ, Rate=1/θ)",
+         x="Theoretical Gamma Quantiles", y="Estimated Frailty Quantiles")+
+    theme_minimal()
+}
+
+qqplot_theoretical(frailty_est, shape=1/frailty_variance, rate=1/frailty_variance)
+```
+
 ```{r}
 beepr::beep(2)
 ```
