@@ -17,6 +17,10 @@
 #' @param X Matrix of covariates with `n` rows.
 #'
 #' @return A list with components `time` and `event`.
+#' @examples
+#' params <- list(baseline = 0.1, beta = 0.5, frailty_var = 0.2)
+#' X <- matrix(rnorm(20), ncol = 1)
+#' simulate_frailty_data("exponential", n = 20, params = params, X = X)
 #' @export
 simulate_frailty_data <- function(baseline, n, params, X) {
   resolve_baseline <- function(baseline) {

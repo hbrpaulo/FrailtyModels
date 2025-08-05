@@ -15,6 +15,9 @@
 #'   - `coverage`: data frame with columns `N`, `Parameter`, and `Coverage`.
 #'   - `ci_width`: data frame with columns `N`, `Parameter`, and `MeanWidth`.
 #'   If `save_path` is supplied the list is saved to disk.
+#' @examples
+#' params <- list(baseline = 0.1, beta = 0.5, frailty_var = 0.2)
+#' coverage_multiN("exponential", params, n_vec = c(50, 100), sims = 2)
 #' @export
 coverage_multiN <- function(baseline, true_params, n_vec, sims, alpha = 0.05,
                             X_fun = NULL, save_path = NULL) {

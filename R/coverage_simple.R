@@ -19,6 +19,9 @@
 #'   - `coverage`: named numeric vector of empirical coverage probabilities.
 #'   - `ci_data`: data frame of confidence interval results across simulations.
 #'   If `save_path` is provided, the list is saved to disk.
+#' @examples
+#' params <- list(baseline = 0.1, beta = 0.5, frailty_var = 0.2)
+#' coverage_prob("exponential", params, n = 50, sims = 2)
 #' @export
 coverage_prob <- function(baseline, true_params, n, sims, alpha = 0.05,
                           X_fun = NULL, save_path = NULL) {
