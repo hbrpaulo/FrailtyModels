@@ -11,7 +11,7 @@
 - Legacy R code should be modularized into `scripts - R/legacy/{analysis,interpretation,report}`.
 - Each R function lives in its own file, uses `snake_case`, and includes
 `roxygen2` documentation.
-- Place example notebooks or R Markdown files under `usage_examples/legacy`.
+- Place example notebooks or R Markdown files under `usage_examples/`.
 
 ---
 
@@ -24,7 +24,7 @@ docstrings for public functions.
 
 ## Testing
 - **Python tests:** run `pytest` at repository root.
-- **R tests:** run `R -q -e "testthat::test_dir('tests/legacy')"` after modifying any R code.
+- **R tests:** run `R -q -e "testthat::test_dir('tests/')"` after modifying any R code.
 
 ---
 
