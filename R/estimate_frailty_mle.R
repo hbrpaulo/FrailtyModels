@@ -12,8 +12,14 @@
 #' @param event Event indicators (1 = event, 0 = censored).
 #' @param X Matrix of covariates with rows equal to length of `times`.
 #' @param baseline Baseline specification (see `simulate_frailty_data`).
-#'
+#' 
 #' @return A list with estimated parameters, standard errors, and log-likelihood.
+#' @examples
+#' init <- list(baseline = 0.1, beta = 0, frailty_var = 0.5)
+#' times <- c(1, 2, 3)
+#' event <- c(1, 0, 1)
+#' X <- matrix(numeric(), nrow = 3, ncol = 0)
+#' estimate_frailty_mle(init, times, event, X, "exponential")
 #' @export
 estimate_frailty_mle <- function(params_init, times, event, X, baseline) {
   resolve_baseline <- function(baseline) {

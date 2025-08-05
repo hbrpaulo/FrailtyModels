@@ -1,3 +1,14 @@
+#' Flexible frailty model utilities
+#'
+#' Helper functions for fitting a frailty model with customizable baseline
+#' hazards and empirical Bayes estimation.
+#'
+#' @examples
+#' \dontrun{
+#' # Script depends on external data; see functions below for usage
+#' }
+NULL
+
 # Flexible frailty model with customizable baseline hazard (H0) and EB frailty estimation (with covariate integration)
 
 dist_chosen <- "weibull"  # Options: "weibull", "exponential", "gompertz", "gamma", "lognormal", "loglogistic", "piecewise_exp"
@@ -50,6 +61,24 @@ baseline_functions <- list(
   )
 )
 
+#' Log-likelihood for flexible frailty model
+#'
+#' Computes the negative log-likelihood for a frailty model with
+#' distribution-specific baselines and covariate effects.
+#'
+#' @param params Parameter vector containing baseline, frailty variance,
+#'   and covariate effects.
+#' @param times Follow-up times.
+#' @param event Event indicators.
+#' @param X Covariate matrix.
+#' @param dist Baseline distribution name.
+#' @param breaks Break points for piecewise exponential baseline.
+#'
+#' @return Numeric scalar negative log-likelihood.
+#' @examples
+#' \dontrun{
+#' frailty_flexible_loglik(rep(0.1, 5), surv_time, event, X_real)
+#' }
 frailty_flexible_loglik <- function(params, times, event, X, dist=dist_chosen, breaks=breaks_pw){
   frailty_var <- params[3]
   p <- ncol(X)
@@ -98,6 +127,18 @@ frailty_flexible_loglik <- function(params, times, event, X, dist=dist_chosen, b
   -sum(event*(log(h)+log(S))+(1-event)*log(S))
 }
 
+#' Empirical Bayes frailty estimate
+#'
+#' Computes the posterior mean frailty for each observation under the
+#' specified baseline hazard and covariate effects.
+#'
+#' @inheritParams frailty_flexible_loglik
+#'
+#' @return Numeric vector of expected frailty values.
+#' @examples
+#' \dontrun{
+#' EB_frailty_flexible(rep(0.1, 5), surv_time, event, X_real)
+#' }
 EB_frailty_flexible <- function(params, times, event, X, dist=dist_chosen, breaks=breaks_pw){
   frailty_var <- params[3]
   alpha_gamma <- 1/frailty_var
