@@ -13,6 +13,11 @@ While this repository begins with standalone scripts, the long‑term goal is to
 
 - **`initialScript.R`** – A prototype script that fits parametric frailty models via maximum likelihood and returns empirical Bayes frailty estimates for a user-supplied data set.
 - **`frailtyWeibullEstimation.Rmd`** – An R Markdown notebook walking through simulation, estimation, and coverage analysis for a Gamma frailty model with a Weibull baseline.
+- **`scripts/R/legacy/analysis/`** – Modular R functions for simulating data,
+  estimating parameters, computing coverage, and visualizing results for the
+  Weibull baseline with Gamma frailty.
+- **`usage_examples/vignette_weibull.Rmd`** – Reproducible walkthrough sourcing
+  the analysis scripts and demonstrating the full Weibull frailty workflow.
 - **`LICENSE`** – MIT License.
 
 ## Requirements
@@ -28,6 +33,10 @@ install.packages(c("survival", "tidyverse", "parfm", "kableExtra", "ggplot2"))
 1. Edit `initialScript.R` to point to your own CSV file with survival data.
 2. Source the script or run it line by line in R to inspect the fitted parameters and frailty estimates.
 3. Open `frailtyWeibullEstimation.Rmd` in RStudio (or a similar environment) and knit it to HTML to reproduce the simulation and coverage study.
+4. Alternatively, source the functions under `scripts/R/legacy/analysis/` and
+   run `usage_examples/vignette_weibull.Rmd` to explore the modular Weibull
+   frailty workflow including simulation, estimation, coverage studies, and
+   plotting.
 
 Example data are not included, so you will need to supply your own data set to reproduce the analyses.
 
