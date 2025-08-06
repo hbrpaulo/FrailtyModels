@@ -29,76 +29,6 @@
 #' }
 #' @export
 simulate_frailty_data <- function(baseline, n, params, X) {
-  resolve_baseline <- function(baseline) {
-    if (is.character(baseline)) {
-      b <- switch(tolower(baseline),
-        exponential = list(
-          param_names = "rate",
-          positive = TRUE,
-          h0 = function(t, p) rep(p[1], length(t)),
-          H0 = function(t, p) p[1] * t,
-          H0_inv = function(y, p) y / p[1]
-        ),
-        weibull = list(
-          param_names = c("shape", "scale"),
-          positive = c(TRUE, TRUE),
-          h0 = function(t, p) p[1] / p[2] * (t / p[2])^(p[1] - 1),
-          H0 = function(t, p) (t / p[2])^p[1],
-          H0_inv = function(y, p) p[2] * y^(1 / p[1])
-        ),
-        gompertz = list(
-          param_names = c("lambda", "gamma"),
-          positive = c(TRUE, TRUE),
-          h0 = function(t, p) p[1] * exp(p[2] * t),
-          H0 = function(t, p) p[1] / p[2] * (exp(p[2] * t) - 1),
-          H0_inv = function(y, p) log(1 + p[2] * y / p[1]) / p[2]
-        ),
-        loglogistic = list(
-          param_names = c("shape", "scale"),
-          positive = c(TRUE, TRUE),
-          h0 = function(t, p) (p[1] / p[2]) * (t / p[2])^(p[1] - 1) /
-            (1 + (t / p[2])^p[1]),
-          H0 = function(t, p) log(1 + (t / p[2])^p[1]),
-          H0_inv = function(y, p) p[2] * (exp(y) - 1)^(1 / p[1])
-        ),
-        lognormal = list(
-          param_names = c("meanlog", "sdlog"),
-          positive = c(FALSE, TRUE),
-          h0 = function(t, p) dlnorm(t, meanlog = p[1], sdlog = p[2]) /
-            (1 - plnorm(t, meanlog = p[1], sdlog = p[2])),
-          H0 = function(t, p) -log(1 - plnorm(t, meanlog = p[1], sdlog = p[2])),
-          H0_inv = function(y, p) qlnorm(1 - exp(-y), meanlog = p[1], sdlog = p[2])
-        ),
-        stop("Unsupported baseline distribution")
-      )
-    } else if (is.list(baseline)) {
-      if (length(baseline) == 1 && is.character(baseline[[1]])) {
-        return(resolve_baseline(baseline[[1]]))
-      }
-      required <- c("h0", "H0")
-      if (!all(required %in% names(baseline))) {
-        stop("Custom baseline must provide h0 and H0 functions")
-      }
-      if (!is.function(baseline$h0) || !is.function(baseline$H0)) {
-        stop("h0 and H0 must be functions")
-      }
-      b <- baseline
-      b$param_names <- b$param_names %||% character(0)
-      b$positive <- b$positive %||% rep(TRUE, length(b$param_names))
-      if (is.null(b$H0_inv)) {
-        H0_fun <- b$H0
-        b$H0_inv <- function(y, p) {
-          sapply(y, function(yy) {
-            uniroot(function(t) H0_fun(t, p) - yy,
-                    lower = 1e-10, upper = 1e6)$root
-          })
-        }
-      }
-    } else {
-      stop("baseline must be a character string or list")
-    }
-    b
-  }
   `%||%` <- function(a, b) if (!is.null(a)) a else b
 
   if (!is.numeric(n) || length(n) != 1 || n <= 0) stop("n must be positive")
@@ -117,7 +47,7 @@ simulate_frailty_data <- function(baseline, n, params, X) {
     stop("censor_rate must be >= 0")
   }
 
-  base <- resolve_baseline(baseline)
+  base <- get_baseline_functions(baseline)
   base_params <- params$baseline
   if (length(base$param_names) > 0) {
     if (is.null(base_params) || length(base_params) != length(base$param_names)) {
