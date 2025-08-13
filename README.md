@@ -18,6 +18,9 @@ While this repository begins with standalone scripts, the long‑term goal is to
   Weibull baseline with Gamma frailty.
 - **`usage_examples/vignette_weibull.Rmd`** – Reproducible walkthrough sourcing
   the analysis scripts and demonstrating the full Weibull frailty workflow.
+- **`usage_examples/frailty_weibull_analysis.Rmd`** – Notebook showcasing the
+  modular functions for simulation, estimation, coverage studies, and the
+  wrapper pipeline.
 - **`LICENSE`** – MIT License.
 
 ## Requirements
@@ -37,6 +40,8 @@ install.packages(c("survival", "tidyverse", "parfm", "kableExtra", "ggplot2"))
    run `usage_examples/vignette_weibull.Rmd` to explore the modular Weibull
    frailty workflow including simulation, estimation, coverage studies, and
    plotting.
+5. For a concise end-to-end demonstration of these functions, knit
+   `usage_examples/frailty_weibull_analysis.Rmd`.
 
 Example data are not included, so you will need to supply your own data set to reproduce the analyses.
 
