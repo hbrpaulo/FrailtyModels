@@ -241,10 +241,7 @@ coverage_study <- function(n_sim = 500, n = 5000, alpha = 0.05) {
   ci_all <- do.call(rbind, ci_records)
   return(list(coverage=coverage, ci_data=ci_all))
 }
-```
 
-
-```{r coverage, eval = TRUE, cache = TRUE}
 # Run coverage study safely
 set.seed(123)
 coverage <- coverage_study(n_sim=5)
